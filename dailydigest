@@ -1,0 +1,59 @@
+#!/bin/bash
+
+SERVICE_FIVEF="http://localhost:55111"
+SERVICE_LLAMA="http://localhost:11434"
+
+PROMPT_SUMMARY="Summarize the following CONTENT in 3 list items, each prefixed with a dash. Do not repeat this instruction, directly give the answer. If it is in German, keep it in German, focus on the most important, surprising or shocking aspects and use clear logical reasoning. Do not state the obvious."
+PROMPT_CRITICAL="Critically reflect the following CONTENT in exactly 1 sentence, using a scientific, critical world-view and an argumentation that would convience Karl Popper. Do not repeat this instruction, directly give the answer. Keep it as short as possible."
+PROMPT_TAKEAWAY="Name a single most important fact or info from the following CONTENT, keep it as short as possible. Do not repeat this instruction, directly give the answer"
+
+
+curl --no-progress-meter --fail "$SERVICE_FIVEF/makefulltextfeed.php?url=sec%3A%2F%2Fwww.tagesschau.de%2Findex~rss2.xml&max=1&links=preserve" > /dev/null
+
+llama() {
+    curl "$SERVICE_LLAMA/api/chat" -d "{
+    \"model\": \"llama3:70b\",
+    \"messages\": [
+        {
+        \"role\": \"user\",
+        \"content\": \"$1 [BEGIN CONTENT] $2 [END CONTENT]\"
+        }
+    ],
+    \"stream\": false
+    }" | jq -r .message.content
+}
+
+wget "$1" -O feed.rss
+output=$(date +"%Y-%m-%d")
+
+{
+    echo '<style>@font-face { font-family: Chomsky; src: url("chomsky/dist/Chomsky.otf") format("opentype"); } h1 { font-family: Chomsky; font-size: 400% } </style>'
+    printf "\n\n# Timm's Daily Digest\n\n"
+    printf "<center>%s</center>\n\n" "$output"
+} > "$output.md"
+
+
+echo "cat  //item/link/text()" | xmllint --shell feed.rss | grep -E '^\w' |
+    while read -r url ; do
+    	echo "$url"
+
+        json=$(curl "$SERVICE_FIVEF/extract.php?url=$url")
+        title=$(echo "$json" | jq -r .title)
+        content=$(echo "$json" | jq -r .content | sed 's/"//g' | tr '\n' ' ')
+
+        if [[ "$content" == "null" ]]; then
+            echo "Content extraction failed: $url"
+            continue
+        fi
+
+        {
+            printf "## %s \n\n" "$title"
+            printf "%s \n\n" "$(llama "$PROMPT_SUMMARY" "$content" | tail --lines=+2)"
+            printf "Source: <%s> \n\n" "$url"
+            printf "### Critical view \n\n %s \n\n" "$(llama "$PROMPT_CRITICAL" "$content" | tail --lines=+2 )"
+            printf "### Main point\n\n %s \n\n" "$(llama "$PROMPT_TAKEAWAY" "$content" | tail --lines=+2)"
+        } >> "$output.md"
+    done
+
+
+rm feed.rss

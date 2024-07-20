@@ -1,0 +1,3 @@
+[submodule "chomsky"]
+	path = chomsky
+	url = https://github.com/ctrlcctrlv/chomsky
