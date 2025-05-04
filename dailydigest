@@ -3,27 +3,28 @@
 SERVICE_FIVEF="http://localhost:55111"
 SERVICE_LLAMA="http://localhost:11434"
 
-PROMPT_SUMMARY="Summarize the following CONTENT in 3 list items, each prefixed with a dash. Do not repeat this instruction, directly give the answer. If it is in German, keep it in German, focus on the most important, surprising or shocking aspects and use clear logical reasoning. Do not state the obvious."
-PROMPT_CRITICAL="Critically reflect the following CONTENT in exactly 1 sentence, using a scientific, critical world-view and an argumentation that would convience Karl Popper. Do not repeat this instruction, directly give the answer. Keep it as short as possible."
-PROMPT_TAKEAWAY="Name a single most important fact or info from the following CONTENT, keep it as short as possible. Do not repeat this instruction, directly give the answer"
+LLM_MODEL="gemma3:4b"
+
+PROMPT_SUMMARY="Summarize in 2 sentences. Do not repeat this instruction, directly give the answer. Focus on the most important, surprising or shocking aspects. Do not state the obvious."
+PROMPT_KEYPOINTS="Extract the most important facts and information from the text in max 5 bullet points, each as a separate list item. Do not repeat this instruction, directly give the answer. Keep it as short as possible."
 
 
 curl --no-progress-meter --fail "$SERVICE_FIVEF/makefulltextfeed.php?url=sec%3A%2F%2Fwww.tagesschau.de%2Findex~rss2.xml&max=1&links=preserve" > /dev/null
 
 llama() {
     curl "$SERVICE_LLAMA/api/chat" -d "{
-    \"model\": \"llama3:70b\",
+    \"model\": \"$LLM_MODEL\",
     \"messages\": [
         {
         \"role\": \"user\",
-        \"content\": \"$1 [BEGIN CONTENT] $2 [END CONTENT]\"
+        \"content\": \"$2\n\n$1\"
         }
     ],
     \"stream\": false
     }" | jq -r .message.content
 }
 
-wget "$1" -O feed.rss
+curl -s "$1" -o feed.rss
 output=$(date +"%Y-%m-%d")
 
 {
@@ -48,10 +49,10 @@ echo "cat  //item/link/text()" | xmllint --shell feed.rss | grep -E '^\w' |
 
         {
             printf "## %s \n\n" "$title"
-            printf "%s \n\n" "$(llama "$PROMPT_SUMMARY" "$content" | tail --lines=+2)"
             printf "Source: <%s> \n\n" "$url"
-            printf "### Critical view \n\n %s \n\n" "$(llama "$PROMPT_CRITICAL" "$content" | tail --lines=+2 )"
-            printf "### Main point\n\n %s \n\n" "$(llama "$PROMPT_TAKEAWAY" "$content" | tail --lines=+2)"
+
+            printf "%s \n\n" "$(llama "$PROMPT_SUMMARY" "$content")"
+            printf "%s \n\n" "$(llama "$PROMPT_KEYPOINTS" "$content")"
         } >> "$output.md"
     done
 
